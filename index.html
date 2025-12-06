@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Admin - Dobleng APK Mods</title>
+    <!-- CSS sama seperti sebelumnya, tidak diubah -->
+</head>
+<body>
+    <!-- Kode HTML untuk panel admin sama seperti sebelumnya -->
+    <!-- Hanya tambahkan kode JavaScript untuk integrasi -->
+
+    <script>
+        // Key untuk localStorage (SAMA dengan halaman utama)
+        const APK_DATA_KEY = 'dobleng_apk_data';
+        const ADMIN_KEY = 'dobleng_admin_data';
+        const USERS_KEY = 'dobleng_users_data';
+        const POINTS_KEY = 'dobleng_points_history';
+        const LOGS_KEY = 'dobleng_admin_logs';
+        
+        // Load APK data dari localStorage (shared dengan halaman utama)
+        function loadApkData() {
+            const savedApks = localStorage.getItem(APK_DATA_KEY);
+            if (savedApks) {
+                return JSON.parse(savedApks);
+            }
+            return [];
+        }
+        
+        // Save APK data ke localStorage (shared dengan halaman utama)
+        function saveApkData(apkData) {
+            localStorage.setItem(APK_DATA_KEY, JSON.stringify(apkData));
+            
+            // Trigger storage event untuk halaman utama
+            window.dispatchEvent(new Event('storage'));
+            
+            // Juga simpan ke localStorage admin untuk backup
+            localStorage.setItem('admin_' + APK_DATA_KEY, JSON.stringify(apkData));
+        }
+        
+        // Fungsi addNewApk yang dimodifikasi
+        function addNewApk(apkDataObj) {
+            let apkData = loadApkData();
+            const newId = apkData.length > 0 ? Math.max(...apkData.map(a => a.id)) + 1 : 1;
+            
+            // Generate icon color random jika tidak disediakan
+            const iconColors = ["#f43f5e", "#10b981", "#8b5cf6", "#f59e0b", "#3b82f6", "#ec4899", "#6366f1"];
+            const randomColor = iconColors[Math.floor(Math.random() * iconColors.length)];
+            
+            const newApk = {
+                id: newId,
+                name: apkDataObj.name,
+                version: apkDataObj.version,
+                size: apkDataObj.size,
+                category: apkDataObj.category,
+                icon: apkDataObj.icon || "fas fa-mobile-alt",
+                iconColor: apkDataObj.iconColor || randomColor,
+                url: apkDataObj.url,
+                description: apkDataObj.description,
+                status: apkDataObj.status || 'active',
+                downloads: 0,
+                lastDownload: null,
+                addedBy: currentAdmin || 'admin',
+                addedDate: new Date().toISOString(),
+                featured: apkDataObj.featured || false,
+                isZip: apkDataObj.url.toLowerCase().includes('.zip')
+            };
+            
+            apkData.push(newApk);
+            saveApkData(apkData);
+            
+            addLog('Add APK', `Menambahkan APK: ${newApk.name} (${newApk.version})`);
+            showAlert(`APK ${newApk.name} berhasil ditambahkan! Akan muncul di halaman utama.`, 'success');
+            
+            // Update UI
+            updateDashboardStats();
+            loadApkTable();
+            hideModal('addApkModal');
+            document.getElementById('addApkForm').reset();
+            
+            return newApk;
+        }
+        
+        // Fungsi edit APK
+        function editApk(apkId) {
+            const apkData = loadApkData();
+            const apk = apkData.find(a => a.id === apkId);
+            
+            if (!apk) {
+                showAlert('APK tidak ditemukan!', 'error');
+                return;
+            }
+            
+            // Tampilkan modal edit
+            showEditApkModal(apk);
+        }
+        
+        // Fungsi untuk menampilkan modal edit APK
+        function showEditApkModal(apk) {
+            // Isi form dengan data APK
+            document.getElementById('editApkId').value = apk.id;
+            document.getElementById('editApkName').value = apk.name;
+            document.getElementById('editApkVersion').value = apk.version;
+            document.getElementById('editApkSize').value = apk.size;
+            document.getElementById('editApkCategory').value = apk.category;
+            document.getElementById('editApkIcon').value = apk.icon;
+            document.getElementById('editApkIconColor').value = apk.iconColor;
+            document.getElementById('editApkUrl').value = apk.url;
+            document.getElementById('editApkDescription').value = apk.description;
+            document.getElementById('editApkStatus').value = apk.status;
+            document.getElementById('editApkFeatured').checked = apk.featured || false;
+            
+            // Tampilkan modal
+            showModal('editApkModal');
+        }
+        
+        // Fungsi update APK
+        function updateApk(apkId, updatedData) {
+            let apkData = loadApkData();
+            const apkIndex = apkData.findIndex(a => a.id === apkId);
+            
+            if (apkIndex === -1) {
+                showAlert('APK tidak ditemukan!', 'error');
+                return false;
+            }
+            
+            // Update data
+            apkData[apkIndex] = {
+                ...apkData[apkIndex],
+                ...updatedData,
+                updatedDate: new Date().toISOString(),
+                updatedBy: currentAdmin || 'admin'
+            };
+            
+            saveApkData(apkData);
+            
+            addLog('Update APK', `Memperbarui APK: ${apkData[apkIndex].name} (${apkData[apkIndex].version})`);
+            showAlert(`APK ${apkData[apkIndex].name} berhasil diperbarui!`, 'success');
+            
+            // Update UI
+            updateDashboardStats();
+            loadApkTable();
+            
+            return true;
+        }
+        
+        // Fungsi delete APK
+        function deleteApk(apkId) {
+            if (confirm('Apakah Anda yakin ingin menghapus APK ini?')) {
+                let apkData = loadApkData();
+                const apkIndex = apkData.findIndex(a => a.id === apkId);
+                
+                if (apkIndex !== -1) {
+                    const deletedApk = apkData[apkIndex];
+                    
+                    // Soft delete (ubah status menjadi inactive)
+                    apkData[apkIndex].status = 'inactive';
+                    apkData[apkIndex].deletedAt = new Date().toISOString();
+                    apkData[apkIndex].deletedBy = currentAdmin || 'admin';
+                    
+                    saveApkData(apkData);
+                    
+                    addLog('Delete APK', `Menghapus APK: ${deletedApk.name} (${deletedApk.version})`);
+                    showAlert(`APK ${deletedApk.name} berhasil dihapus! (Status diubah menjadi nonaktif)`, 'success');
+                    
+                    // Update UI
+                    updateDashboardStats();
+                    loadApkTable();
+                }
+            }
+        }
+        
+        // Fungsi untuk memuat data APK ke tabel
+        function loadApkTable(searchTerm = '') {
+            const apkData = loadApkData();
+            const tbody = document.getElementById('apkTableBody');
+            
+            let filteredApks = apkData;
+            
+            if (searchTerm) {
+                filteredApks = apkData.filter(apk => 
+                    apk.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    apk.version.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    apk.category.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+            }
+            
+            let html = '';
+            
+            filteredApks.forEach(apk => {
+                const statusBadge = apk.status === 'active' 
+                    ? '<span class="badge badge-success">Aktif</span>' 
+                    : '<span class="badge badge-danger">Nonaktif</span>';
+                
+                const categoryBadge = `<span class="badge badge-info">${apk.category}</span>`;
+                const featuredBadge = apk.featured ? '<span class="badge badge-warning" style="margin-left: 5px;">Featured</span>' : '';
+                
+                const addedDate = new Date(apk.addedDate).toLocaleDateString();
+                const downloadCount = apk.downloads || 0;
+                
+                html += `
+                    <tr>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <div style="width: 30px; height: 30px; border-radius: 6px; background: ${apk.iconColor}; display: flex; align-items: center; justify-content: center;">
+                                    <i class="${apk.icon}" style="font-size: 14px;"></i>
+                                </div>
+                                <div>
+                                    ${apk.name}
+                                    ${featuredBadge}
+                                </div>
+                            </div>
+                        </td>
+                        <td>${apk.version}</td>
+                        <td>${categoryBadge}</td>
+                        <td>${apk.size}</td>
+                        <td>${downloadCount}</td>
+                        <td>${statusBadge}</td>
+                        <td>${addedDate}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn btn-sm" onclick="editApk(${apk.id})" style="background: #8b5cf6; color: white;">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteApk(${apk.id})">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                                ${apk.status === 'active' ? 
+                                    `<button class="btn btn-sm btn-success" onclick="featureApk(${apk.id})">
+                                        <i class="fas fa-star"></i>
+                                    </button>` : 
+                                    `<button class="btn btn-sm btn-warning" onclick="activateApk(${apk.id})">
+                                        <i class="fas fa-check"></i>
+                                    </button>`
+                                }
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            tbody.innerHTML = html || '<tr><td colspan="8" style="text-align: center;">Tidak ada data APK</td></tr>';
+        }
+        
+        // Fungsi untuk feature/unfeature APK
+        function featureApk(apkId) {
+            let apkData = loadApkData();
+            const apkIndex = apkData.findIndex(a => a.id === apkId);
+            
+            if (apkIndex !== -1) {
+                apkData[apkIndex].featured = !apkData[apkIndex].featured;
+                saveApkData(apkData);
+                
+                const action = apkData[apkIndex].featured ? 'Featured' : 'Unfeatured';
+                addLog('Feature APK', `${action} APK: ${apkData[apkIndex].name}`);
+                showAlert(`APK ${apkData[apkIndex].name} ${apkData[apkIndex].featured ? 'ditandai sebagai featured!' : 'tidak lagi featured'}`, 'success');
+                
+                loadApkTable();
+            }
+        }
+        
+        // Fungsi untuk mengaktifkan kembali APK
+        function activateApk(apkId) {
+            let apkData = loadApkData();
+            const apkIndex = apkData.findIndex(a => a.id === apkId);
+            
+            if (apkIndex !== -1) {
+                apkData[apkIndex].status = 'active';
+                apkData[apkIndex].reactivatedAt = new Date().toISOString();
+                apkData[apkIndex].reactivatedBy = currentAdmin || 'admin';
+                
+                saveApkData(apkData);
+                
+                addLog('Activate APK', `Mengaktifkan APK: ${apkData[apkIndex].name}`);
+                showAlert(`APK ${apkData[apkIndex].name} berhasil diaktifkan kembali!`, 'success');
+                
+                loadApkTable();
+            }
+        }
+        
+        // Update dashboard stats
+        function updateDashboardStats() {
+            const apkData = loadApkData();
+            const activeApks = apkData.filter(apk => apk.status === 'active').length;
+            const totalDownloads = apkData.reduce((sum, apk) => sum + (apk.downloads || 0), 0);
+            
+            document.getElementById('totalApks').textContent = activeApks;
+            document.getElementById('totalUsers').textContent = usersData.length;
+            document.getElementById('totalPoints').textContent = usersData.reduce((sum, user) => sum + user.points, 0).toLocaleString();
+            
+            // Update total downloads di dashboard jika ada elemennya
+            const totalDownloadsEl = document.getElementById('totalDownloads');
+            if (totalDownloadsEl) {
+                totalDownloadsEl.textContent = totalDownloads.toLocaleString();
+            }
+        }
+        
+        // Setup event listeners untuk form APK
+        document.addEventListener('DOMContentLoaded', function() {
+            // Form tambah APK
+            document.getElementById('addApkForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const apkDataObj = {
+                    name: document.getElementById('apkName').value,
+                    version: document.getElementById('apkVersion').value,
+                    size: document.getElementById('apkSize').value,
+                    category: document.getElementById('apkCategory').value,
+                    icon: document.getElementById('apkIcon').value,
+                    iconColor: document.getElementById('apkIconColor').value,
+                    url: document.getElementById('apkUrl').value,
+                    description: document.getElementById('apkDescription').value,
+                    status: document.getElementById('apkStatus').value,
+                    featured: document.getElementById('apkFeatured').checked
+                };
+                
+                addNewApk(apkDataObj);
+            });
+            
+            // Form edit APK
+            document.getElementById('editApkForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                const apkId = parseInt(document.getElementById('editApkId').value);
+                const updatedData = {
+                    name: document.getElementById('editApkName').value,
+                    version: document.getElementById('editApkVersion').value,
+                    size: document.getElementById('editApkSize').value,
+                    category: document.getElementById('editApkCategory').value,
+                    icon: document.getElementById('editApkIcon').value,
+                    iconColor: document.getElementById('editApkIconColor').value,
+                    url: document.getElementById('editApkUrl').value,
+                    description: document.getElementById('editApkDescription').value,
+                    status: document.getElementById('editApkStatus').value,
+                    featured: document.getElementById('editApkFeatured').checked
+                };
+                
+                updateApk(apkId, updatedData);
+                hideModal('editApkModal');
+            });
+            
+            // Load data saat pertama kali
+            loadApkTable();
+            updateDashboardStats();
+        });
+        
+        // Tambahkan modal edit APK ke HTML panel admin
+        const editApkModalHTML = `
+        <div id="editApkModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 class="modal-title">Edit APK</h3>
+                    <button class="close-modal" onclick="hideModal('editApkModal')">&times;</button>
+                </div>
+                
+                <div class="modal-body">
+                    <form id="editApkForm">
+                        <input type="hidden" id="editApkId">
+                        
+                        <div class="form-group">
+                            <label class="form-label">Nama APK *</label>
+                            <input type="text" class="form-control" id="editApkName" required>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Versi *</label>
+                                <input type="text" class="form-control" id="editApkVersion" required>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Ukuran *</label>
+                                <input type="text" class="form-control" id="editApkSize" required>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Kategori *</label>
+                            <select class="form-control" id="editApkCategory" required>
+                                <option value="">Pilih kategori...</option>
+                                <option value="streaming">Streaming & Hiburan</option>
+                                <option value="ai">AI & Fotografi</option>
+                                <option value="tools">Tools & Utility</option>
+                                <option value="social">Social Media</option>
+                                <option value="game">Game</option>
+                            </select>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Icon (Font Awesome)</label>
+                                <input type="text" class="form-control" id="editApkIcon" placeholder="fas fa-film">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label">Warna Icon</label>
+                                <input type="color" class="form-control" id="editApkIconColor" value="#0ea5e9">
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">URL MediaFire *</label>
+                            <input type="url" class="form-control" id="editApkUrl" required>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label class="form-label">Deskripsi *</label>
+                            <textarea class="form-control" id="editApkDescription" rows="3" required></textarea>
+                        </div>
+                        
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Status</label>
+                                <select class="form-control" id="editApkStatus">
+                                    <option value="active">Aktif</option>
+                                    <option value="inactive">Nonaktif</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label class="form-label" style="display: flex; align-items: center; gap: 10px;">
+                                    <input type="checkbox" id="editApkFeatured">
+                                    Featured APK
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="modal-footer">
+                            <button type="button" class="btn" onclick="hideModal('editApkModal')">Batal</button>
+                            <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        `;
+        
+        // Tambahkan modal edit ke body
+        document.body.insertAdjacentHTML('beforeend', editApkModalHTML);
+        
+        // Export fungsi ke global scope
+        window.editApk = editApk;
+        window.deleteApk = deleteApk;
+        window.featureApk = featureApk;
+        window.activateApk = activateApk;
+    </script>
+</body>
+</html>
